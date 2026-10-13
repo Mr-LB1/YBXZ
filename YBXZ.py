@@ -2545,10 +2545,16 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
 
 
 if __name__ == "__main__":
-    # 界面子进程模式下stdout是管道, 默认块缓冲会让日志延迟, 改为行缓冲
+    # 界面子进程模式下stdout是管道, 默认块缓冲会让日志延迟, 改为行缓冲;
+    # 管道编码钉死UTF-8(与UI读线程的decode一致, 不跟随系统ANSI代码页),
+    # 直连控制台跑(dev)时保持控制台编码不动
     try:
-        sys.stdout.reconfigure(line_buffering=True)
-        sys.stderr.reconfigure(line_buffering=True)
+        if not sys.stdout.isatty():
+            sys.stdout.reconfigure(line_buffering=True, encoding='utf-8')
+            sys.stderr.reconfigure(line_buffering=True, encoding='utf-8')
+        else:
+            sys.stdout.reconfigure(line_buffering=True)
+            sys.stderr.reconfigure(line_buffering=True)
     except Exception:
         pass
     # 多线程(挂机主线程+断网监控线程)同时print时片段会交叉堆在一行,

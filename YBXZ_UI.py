@@ -551,8 +551,8 @@ def _set_skipped_ver(ver):
 
 
 class SafeStdout(object):
-    """stdout安全封装: 打包后的管道是GBK编码, paddle可能认出GBK编不了的
-    字符(如®), 直接print会UnicodeEncodeError崩溃, 这里替换后重写"""
+    """stdout安全封装: 管道编码统一为UTF-8(见_spawn), 万一遇到编不了的
+    字符直接print会UnicodeEncodeError崩溃, 这里替换后重写"""
 
     def __init__(self, target):
         self.target = target
@@ -561,7 +561,7 @@ class SafeStdout(object):
         try:
             return self.target.write(s)
         except UnicodeEncodeError:
-            return self.target.write(s.encode('gbk', 'replace').decode('gbk'))
+            return self.target.write(s.encode('utf-8', 'replace').decode('utf-8'))
 
     def flush(self):
         try:
@@ -1067,6 +1067,9 @@ class _WorkerProcMixin(object):
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         env = os.environ.copy()
         env['PYTHONUNBUFFERED'] = '1'
+        # 管道编码钉死UTF-8: 默认跟随系统ANSI代码页, 客户开"Beta:使用UTF-8"后
+        # 系统代码页变UTF-8而UI按GBK读会全乱码(实测), 两端必须显式统一
+        env['PYTHONIOENCODING'] = 'utf-8'
         try:
             proc = subprocess.Popen(self.script_cmd(mode, hwnd),
                                     stdout=subprocess.PIPE,
@@ -1088,7 +1091,7 @@ class _WorkerProcMixin(object):
     def read_output(self, proc, hwnd):
         tab = self.tabs.get(hwnd)
         for line in iter(proc.stdout.readline, b''):
-            text = line.decode('gbk', errors='replace').rstrip()
+            text = line.decode('utf-8', errors='replace').rstrip()
             if text and tab is not None:
                 tab['queue'].put(text)
         if tab is not None:
@@ -1497,15 +1500,16 @@ def run_worker(mode, hwnd=0, lnk=''):
 
 if __name__ == '__main__':
     if len(sys.argv) >= 3 and sys.argv[1] == '--worker':
+        # 管道编码钉死UTF-8(与UI读线程的decode一致, 不跟随系统ANSI代码页)
         try:
-            sys.stdout.reconfigure(line_buffering=True)
-            sys.stderr.reconfigure(line_buffering=True)
+            sys.stdout.reconfigure(line_buffering=True, encoding='utf-8')
+            sys.stderr.reconfigure(line_buffering=True, encoding='utf-8')
         except Exception:
             try:
                 import io
-                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gbk',
+                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8',
                                               errors='replace', line_buffering=True)
-                sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='gbk',
+                sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8',
                                               errors='replace', line_buffering=True)
             except Exception:
                 pass
