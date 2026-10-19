@@ -50,7 +50,7 @@ _IS_WIN7 = _is_win7()
 # 发布仓库: github.com/Mr-LB1/YBXZ (公开仓库, 只放version.json+YBXZ.exe, 无源码)
 # 发版流程: 打包后跑 publish_release.py, 客户端启动/点按钮自动检测下载
 # 多镜像原因: 国内raw.githubusercontent常被墙, api.github.com/jsDelivr一般可达
-APP_VER = '202610070001'          # 本程序版本(发版时由publish脚本同步更新此常量)
+APP_VER = '202610190001'          # 本程序版本(发版时由publish脚本同步更新此常量)
 BUILD_TAG = ''                    # 构建标识(显示在标题栏): 正式版为空, Win7测试包构建时置'【Win7测试专用】'
 GITEE_REPO = 'li-bin970228/ybxz'  # 更新源: gitee公开仓库(纯国内, 不用github)
 GITEE_BRANCH = 'master'

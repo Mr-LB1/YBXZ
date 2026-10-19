@@ -1,44 +1,48 @@
 {
- "ver": 202610070001,
- "notes": "性能优化和若干bug修复",
- "md5": "2367e5100a1d329d608f0d09e34de0ca",
- "size": 69841783,
+ "ver": 202610190001,
+ "notes": "修复部分电脑日志界面中文乱码; dm组件注册一次永久生效,启动不再重复弹授权窗,兼容杀软防护更严格的电脑",
+ "md5": "2257d4ce2f58f7116fdbe897b3a7d146",
+ "size": 69779798,
  "sha": "20ecfae05e15916cf3050f8142715b51ef257eaa",
- "tag": "v202610070001",
+ "tag": "v202610190001",
  "exe_name": "佣兵小镇一键版.exe",
  "chunks": [
   {
-   "name": "ybxz_2367e510_0.bin",
-   "md5": "67a8340ee0443de5c2110963c3a27d4a",
+   "name": "ybxz_2257d4ce_0.bin",
+   "md5": "15da2a71fd40f316c302b591f3f714b8",
    "size": 16777216,
-   "sha": "1b36606553e795f1a2aaeee4a8de04b43ce5482e"
+   "sha": "4338019d2e76cb2c3df3c8398173ed54ccaa9a62"
   },
   {
-   "name": "ybxz_2367e510_1.bin",
-   "md5": "11dfac20a6021c038804a87e78c8a4a0",
+   "name": "ybxz_2257d4ce_1.bin",
+   "md5": "d4d2f78a52da539f7d264c246609714b",
    "size": 16777216,
-   "sha": "391690493a91c6465a97fcb3b01e4b07e015d058"
+   "sha": "c1341aa6f83ddc790160220b9aa144aeb6765c9a"
   },
   {
-   "name": "ybxz_2367e510_2.bin",
-   "md5": "7993b93cb825d356a8dad292a54604e1",
+   "name": "ybxz_2257d4ce_2.bin",
+   "md5": "0ad28f6ccb2a9330a4ea71b3ce6c2738",
    "size": 16777216,
-   "sha": "7378182755575a823521d4be9fb3a39966750ce5"
+   "sha": "e6fc0a26559ea42924cd3e886ea0a28be2c42c3d"
   },
   {
-   "name": "ybxz_2367e510_3.bin",
-   "md5": "003e1a33ba11c604892bb8ddb8ffaa54",
+   "name": "ybxz_2257d4ce_3.bin",
+   "md5": "e46844df1412c9b5a3433391d91ad201",
    "size": 16777216,
-   "sha": "2c2f777f6551ed60e2878f0ceea341eb32af35d6"
+   "sha": "ea09c9872fda70a195592ab2b9c51bf0f0ddd71b"
   },
   {
-   "name": "ybxz_2367e510_4.bin",
-   "md5": "d95d85f41ff0bacee260784c91ad349e",
-   "size": 2211408,
-   "sha": "0ee2306c712d5802f8138f48d8b113bff8c69613"
+   "name": "ybxz_2257d4ce_4.bin",
+   "md5": "075f1508f799268031819ffc7176c367",
+   "size": 2150111,
+   "sha": "f18756bbf780db5613f042967bcd564d287a6760"
   }
  ],
  "history": [
+  {
+   "ver": 202610190001,
+   "notes": "修复部分电脑日志界面中文乱码; dm组件注册一次永久生效,启动不再重复弹授权窗,兼容杀软防护更严格的电脑"
+  },
   {
    "ver": 202610070001,
    "notes": "性能优化和若干bug修复"
