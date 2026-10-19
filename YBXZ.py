@@ -9,6 +9,7 @@ import ctypes
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -287,6 +288,42 @@ def dm_is_valid(dm):
         return False
 
 
+def dm_fixed_dll():
+    """随包dm.dll复制到固定位置%LOCALAPPDATA%\\ybxz\\damo\\dm.dll, 成功返回路径;
+    已在且大小一致直接复用; 被杀软拦截等失败返回None(调用方降级注册临时dll)。
+    三重复制链与tools/dm_register.py保持一致"""
+    try:
+        src = resource_path(os.path.join('damo', 'dm.dll'))
+        if not os.path.exists(src):
+            return None
+        dst_dir = os.path.join(os.environ.get('LOCALAPPDATA',
+                                              os.path.expanduser('~')), 'ybxz', 'damo')
+        dst = os.path.join(dst_dir, 'dm.dll')
+        src_size = os.path.getsize(src)
+        if os.path.exists(dst) and os.path.getsize(dst) == src_size:
+            return dst
+        os.makedirs(dst_dir, exist_ok=True)
+        for way in ('copyfile', 'CopyFileW', 'bytes'):
+            try:
+                if way == 'copyfile':
+                    shutil.copyfile(src, dst)
+                elif way == 'CopyFileW':
+                    if not ctypes.windll.kernel32.CopyFileW(u'%s' % src, u'%s' % dst, 0):
+                        continue
+                else:
+                    with open(src, 'rb') as f:
+                        data = f.read()
+                    with open(dst, 'wb') as f:
+                        f.write(data)
+                if os.path.exists(dst) and os.path.getsize(dst) == src_size:
+                    return dst
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
 def dm_reg():
     """
     获取大漠COM对象; 别人电脑第一次运行时dll未注册, 自动提权注册(会弹UAC授权框)
@@ -301,10 +338,21 @@ def dm_reg():
               '电脑上已注册的dm.dmsoft版本残缺(缺关键方法), 重新注册随包dm.dll覆盖...')
     except Exception:
         pass
-    # 未注册: 定位解压出来的dll
-    dll = resource_path(os.path.join('damo', 'dm.dll'))
+    # 未注册: 优先注册固定位置的dll(注册表指向dll完整路径, 固定路径文件一直在
+    # 则注册一次永久有效, 之后启动不再弹UAC); 直接注册解压临时目录的dll,
+    # 重启后临时目录被清注册失效, 每次启动都要重新提权(实测)
+    dll = dm_fixed_dll() or resource_path(os.path.join('damo', 'dm.dll'))
     if not os.path.exists(dll):
         raise RuntimeError('找不到dm.dll: %s' % dll)
+    if 'ybxz' in dll.lower():
+        print(time.strftime('%H:%M:%S'), 'dm.dll固定位置:', dll)
+    else:
+        print(time.strftime('%H:%M:%S'),
+              'dm.dll复制固定位置失败(多半杀软拦截dm.dll), 降级注册临时dll(重启后失效):')
+        print('  ', dll)
+        print('   建议: 杀软排除项添加文件夹 %s 和本程序所在文件夹后重试'
+              % os.path.join(os.environ.get('LOCALAPPDATA',
+                                            os.path.expanduser('~')), 'ybxz'))
     # 32位dll在64位系统上必须用SysWOW64下的32位regsvr32注册
     sysroot = os.environ.get('SystemRoot', r'C:\Windows')
     reg = os.path.join(sysroot, 'SysWOW64', 'regsvr32.exe')
