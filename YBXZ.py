@@ -140,14 +140,16 @@ def page_pt(pt):
 
 
 def log(*args):
-    """带时间戳日志: 收敛全文件98处log(...)"""
-    log(*args)
+    """带时间戳日志: 收敛全文件98处print(time.strftime('%H:%M:%S'), ...)"""
+    print(time.strftime('%H:%M:%S'), *args)
 
 
 def dm_click(pos):
     """真实点击三连(移动-停0.5秒-点击), 节奏是实测调过的, 全文件统一走这里;
     点击后的paddle_cache.clear()由调用方按原语义决定, 不在本函数内偷做"""
-    dm_click(pos)
+    dm.MoveTo(*pos)
+    sleep(0.5)
+    dm.LeftClick()
 
 
 BATTLE_TIMER_RE = re.compile(r'^\d{1,3}[:：]\d{2}([:：]\d{2})?$')  # 纯时间: 03:54 / 0:03:54
@@ -704,6 +706,7 @@ def _pw_capture_arr(hwnd, flag, pw, ph, w, h):
     gdi32 = ctypes.windll.gdi32
 
     hdc = user32.GetDC(hwnd)  # BMIH结构由ybxz_common提供(与UI缩略图共享)
+    mem = gdi32.CreateCompatibleDC(hdc)
     bmp = gdi32.CreateCompatibleBitmap(hdc, pw, ph)
     old = gdi32.SelectObject(mem, bmp)
     u32le = ctypes.WinDLL('user32', use_last_error=True)
