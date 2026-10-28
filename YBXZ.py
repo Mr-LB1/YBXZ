@@ -24,6 +24,10 @@ import numpy as np
 from PIL import Image
 from win32com.client.dynamic import Dispatch
 
+from ybxz_common import (BMIH, client_phys_size, data_dir as _data_dir,
+                         desktop_dirs,
+                         restart_marker_path as _restart_marker_path)
+
 # ================== 通用配置 ==================
 GAME_LNK = '佣兵小镇.lnk'  # 桌面快捷方式文件名, 启动游戏用(模拟双击)
 GAME_WINDOW_TITLE = '佣兵小镇'
@@ -69,19 +73,8 @@ LOADING_RECT = (175, 622, 281, 647)  # 加载进度区域, 出现进度就停止
 BLANK_CLICK = (176, 824)  # 结算遮挡页的固定空白点击位置
 
 
-def _data_dir():
-    """update_data 目录(更新日志/共享帧/备份等全部衍生文件的统一收纳处):
-    打包版在 exe 旁, 源码模式在当前工作目录; 目录不存在则创建。
-    (与 YBXZ_UI._data_dir 语义一致但故意不共享: UI 进程 import 本模块
-    会连带加载 win32com, 不值得为几行路径拼接引入这个依赖)"""
-    base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) \
-        else os.path.abspath('.')
-    d = os.path.join(base, 'update_data')
-    try:
-        os.makedirs(d, exist_ok=True)
-    except OSError:
-        pass
-    return d
+# _data_dir/_restart_marker_path/BMIH/client_phys_size/desktop_dirs
+# 由 ybxz_common 提供(UI与worker共享, 2026-10-28结构优化)
 
 # ================== 地下城挂机(功能6)配置 ==================
 # 一队失败判定色(红色X), RGB元组; 在PrintWindow截图上做像素匹配(后台可判)
@@ -146,6 +139,17 @@ def page_pt(pt):
     return (pt[0] + page_dx, pt[1] + page_dy)
 
 
+def log(*args):
+    """带时间戳日志: 收敛全文件98处log(...)"""
+    log(*args)
+
+
+def dm_click(pos):
+    """真实点击三连(移动-停0.5秒-点击), 节奏是实测调过的, 全文件统一走这里;
+    点击后的paddle_cache.clear()由调用方按原语义决定, 不在本函数内偷做"""
+    dm_click(pos)
+
+
 BATTLE_TIMER_RE = re.compile(r'^\d{1,3}[:：]\d{2}([:：]\d{2})?$')  # 纯时间: 03:54 / 0:03:54
 
 
@@ -195,7 +199,7 @@ def calibrate_page_offset():
         if '第' in t and '章' in t and any(ch.isdigit() for ch in t):
             page_dx, page_dy = cx - 223, cy - 115
             page_calibrated = True
-            print(time.strftime('%H:%M:%S'), '页面校准完成: 偏移 dx=%d dy=%d (标题实测 %d,%d)' % (
+            log('页面校准完成: 偏移 dx=%d dy=%d (标题实测 %d,%d)' % (
                 page_dx, page_dy, cx, cy))
             return True
     return False
@@ -334,7 +338,7 @@ def dm_reg():
         dm = Dispatch('dm.dmsoft')
         if dm_is_valid(dm):
             return dm
-        print(time.strftime('%H:%M:%S'),
+        log(
               '电脑上已注册的dm.dmsoft版本残缺(缺关键方法), 重新注册随包dm.dll覆盖...')
     except Exception:
         pass
@@ -345,9 +349,9 @@ def dm_reg():
     if not os.path.exists(dll):
         raise RuntimeError('找不到dm.dll: %s' % dll)
     if 'ybxz' in dll.lower():
-        print(time.strftime('%H:%M:%S'), 'dm.dll固定位置:', dll)
+        log('dm.dll固定位置:', dll)
     else:
-        print(time.strftime('%H:%M:%S'),
+        log(
               'dm.dll复制固定位置失败(多半杀软拦截dm.dll), 降级注册临时dll(重启后失效):')
         print('  ', dll)
         print('   建议: 杀软排除项添加文件夹 %s 和本程序所在文件夹后重试'
@@ -411,14 +415,14 @@ def init_dm():
     # 非100%缩放: 保持DPI不感知, Windows把窗口/截图/点击全部虚拟化到
     # 96dpi逻辑空间, 游戏布局与100%完全一致 -> 自适应任意缩放
     else:
-        print(time.strftime('%H:%M:%S'),
+        log(
               '系统缩放%d%%: 使用DPI虚拟化模式(窗口物理尺寸会按比例放大)' % (dpi_scale * 100 // 96))
     dm = dm_reg()
     dm = _DmScaled(dm)  # 坐标自适应代理: 窗口实际尺寸≠标定尺寸时MoveTo按比值放大
     dm_path = resource_path("damo")
     dm.SetPath(dm_path)
     try:
-        print(time.strftime('%H:%M:%S'), 'dm.dll版本:', dm.Ver())
+        log('dm.dll版本:', dm.Ver())
     except Exception:
         pass
 
@@ -515,7 +519,7 @@ def bind_game(hwnd):
     ww, wh = wr.right - wr.left, wr.bottom - wr.top
     waw, wah = wa.right - wa.left, wa.bottom - wa.top
     mode = '感知' if (dpi_scale == 96 and not os.environ.get('YBXZ_FORCE_UNAWARE')) else '虚拟化'
-    print(time.strftime('%H:%M:%S'),
+    log(
           '环境: 内容区%dx%d, 窗口%dx%d@( %d,%d ), 工作区%dx%d, 系统缩放%d%%[%s]'
           % (cr.right, cr.bottom, ww, wh, wr.left, wr.top, waw, wah,
              dpi_scale * 100 // 96, mode))
@@ -541,12 +545,12 @@ def bind_target(user32):
     if FIXED_HWND:
         if not ctypes.windll.user32.IsWindow(FIXED_HWND):
             raise RuntimeError('多账号模式: 指定的游戏窗口已关闭, 请刷新列表重新选择')
-        print(time.strftime('%H:%M:%S'), '多账号模式, 绑定指定窗口:', FIXED_HWND)
+        log('多账号模式, 绑定指定窗口:', FIXED_HWND)
         bind_game(FIXED_HWND)
         return FIXED_HWND
     hwnd = dm.FindWindow('Chrome_WidgetWin_0', GAME_WINDOW_TITLE)
     if hwnd == 0:
-        print(time.strftime('%H:%M:%S'), '未找到佣兵小镇运行窗口, 自动启动游戏...')
+        log('未找到佣兵小镇运行窗口, 自动启动游戏...')
         hwnd = launch_game(user32)
     bind_game(hwnd)
     return hwnd
@@ -563,20 +567,20 @@ def keep_window(user32, hwnd_bound):
         # 多账号: 大窗口或渲染子窗口被关闭时, 停止本账号的挂机进程
         u32 = ctypes.windll.user32
         if not u32.IsWindow(bound_top):
-            print(time.strftime('%H:%M:%S'), '大窗口已关闭, 停止本账号挂机')
+            log('大窗口已关闭, 停止本账号挂机')
             return False, hwnd_bound, False
         if bound_child and not u32.IsWindow(bound_child):
-            print(time.strftime('%H:%M:%S'), '渲染子窗口已关闭, 停止本账号挂机')
+            log('渲染子窗口已关闭, 停止本账号挂机')
             return False, hwnd_bound, False
         return True, hwnd_bound, False
     hwnd_now = dm.FindWindow('Chrome_WidgetWin_0', GAME_WINDOW_TITLE)
     if hwnd_now != 0 and hwnd_now != hwnd_bound:
-        print(time.strftime('%H:%M:%S'), '检测到游戏窗口变化, 重新绑定...')
+        log('检测到游戏窗口变化, 重新绑定...')
         bind_game(hwnd_now)
         sleep(2)
         return True, hwnd_now, False
     if hwnd_now == 0:
-        print(time.strftime('%H:%M:%S'), '游戏窗口消失, 重启游戏继续挂机...')
+        log('游戏窗口消失, 重启游戏继续挂机...')
         return True, launch_game(user32), True
     return True, hwnd_bound, False
 
@@ -606,7 +610,7 @@ def _diag_log(msg):
         f.close()
     except Exception:
         pass
-    print(time.strftime('%H:%M:%S'), '[诊断]', msg)
+    log('[诊断]', msg)
 
 
 def _dump_capture_diag(hwnd, err2, err0):
@@ -686,7 +690,7 @@ def _dm_cap_log(msg):
     _dm_cap_fail_logged += 1
     if _dm_cap_fail_logged <= 5 or _dm_cap_fail_logged % 50 == 1:
         _diag_log('[Win7截图兜底] %s' % msg)
-        print(time.strftime('%H:%M:%S'), '[Win7截图兜底]', msg)
+        log('[Win7截图兜底]', msg)
 
 
 # ================== 截图(开局探测锁定唯一通道) ==================
@@ -699,16 +703,7 @@ def _pw_capture_arr(hwnd, flag, pw, ph, w, h):
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
 
-    class BMIH(ctypes.Structure):
-        _fields_ = [('biSize', ctypes.c_uint32), ('biWidth', ctypes.c_int32),
-                    ('biHeight', ctypes.c_int32), ('biPlanes', ctypes.c_uint16),
-                    ('biBitCount', ctypes.c_uint16), ('biCompression', ctypes.c_uint32),
-                    ('biSizeImage', ctypes.c_uint32), ('biXPelsPerMeter', ctypes.c_int32),
-                    ('biYPelsPerMeter', ctypes.c_int32), ('biClrUsed', ctypes.c_uint32),
-                    ('biClrImportant', ctypes.c_uint32)]
-
-    hdc = user32.GetDC(hwnd)
-    mem = gdi32.CreateCompatibleDC(hdc)
+    hdc = user32.GetDC(hwnd)  # BMIH结构由ybxz_common提供(与UI缩略图共享)
     bmp = gdi32.CreateCompatibleBitmap(hdc, pw, ph)
     old = gdi32.SelectObject(mem, bmp)
     u32le = ctypes.WinDLL('user32', use_last_error=True)
@@ -821,22 +816,11 @@ def capture_game():
     if cached is not None and now - cached[0] < 0.5:
         return True, cached[1]
 
-    rect = wintypes.RECT()
-    user32.GetClientRect(hwnd, ctypes.byref(rect))
-    w, h = rect.right, rect.bottom
+    # 物理客户区尺寸: 非基准缩放下DPI虚拟化会让逻辑尺寸≠物理尺寸,
+    # PrintWindow按物理渲染, 缓冲区必须开物理大小(实测150%缩放被裁); 探测逻辑共享
+    w, h, pw, ph = client_phys_size(user32, hwnd)
     if w <= 0 or h <= 0:
         return False, None
-    # 物理客户区尺寸: 非基准缩放下DPI虚拟化会让逻辑尺寸≠物理尺寸,
-    # PrintWindow按物理渲染, 缓冲区必须开物理大小, 否则截图被裁掉一块(实测150%缩放)
-    pw, ph = w, h
-    if hasattr(user32, 'SetThreadDpiAwarenessContext'):
-        old_ctx = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # PMv2
-        if old_ctx:
-            pr = wintypes.RECT()
-            user32.GetClientRect(hwnd, ctypes.byref(pr))
-            user32.SetThreadDpiAwarenessContext(old_ctx)
-            if pr.right > 0 and pr.bottom > 0:
-                pw, ph = pr.right, pr.bottom
 
     # 开局探测: 锁定唯一可用截图通道(全失败报错并停止挂机, 用户要求)
     if _cap_channel is None:
@@ -1061,9 +1045,7 @@ def click_text(rect, text, dy=0):
     """
     pos = text_locate(rect, text, dy=dy)
     if pos is not None:
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        dm_click(pos)
         paddle_cache.clear()  # 点击后界面将变, 清OCR缓存防下轮判到点击前的旧画面
     return pos
 
@@ -1175,7 +1157,7 @@ def wait_network_recover():
     """
     断网后阻塞等待网络恢复, 连续3次ping通才算恢复
     """
-    print(time.strftime('%H:%M:%S'), '检测到断网, 等待网络恢复...')
+    log('检测到断网, 等待网络恢复...')
     ok_count = 0
     while ok_count < 3:
         if net_ok():
@@ -1183,7 +1165,7 @@ def wait_network_recover():
         else:
             ok_count = 0
         sleep(5)
-    print(time.strftime('%H:%M:%S'), '网络已恢复!')
+    log('网络已恢复!')
 
 
 # 挂机模式的后台断网监控信号
@@ -1238,7 +1220,7 @@ class restart_lock:
         k32.WaitForSingleObject(restart_lock._h, 0x7FFFFFFF)
         waited = time.time() - t0
         if waited > 3:
-            print(time.strftime('%H:%M:%S'),
+            log(
                   '等待其他窗口的重启完成(%.0f秒), 马上轮到本窗口...' % waited)
         return self
 
@@ -1269,7 +1251,7 @@ def close_game_window(user32, hwnd=0):
             return
         user32.PostMessageW(hwnd, 0x0010, 0, 0)
         sleep(2)
-    print(time.strftime('%H:%M:%S'), '礼貌关闭失败, 精确强杀该窗口的宿主进程...')
+    log('礼貌关闭失败, 精确强杀该窗口的宿主进程...')
     kill_window_host(hwnd)
 def get_game_lnk():
     """
@@ -1278,12 +1260,7 @@ def get_game_lnk():
     """
     if os.path.isabs(GAME_LNK):
         return GAME_LNK  # 完整路径覆盖: 存在性由调用方检查
-    home = os.path.expanduser('~')
-    candidates = [
-        os.path.join(home, 'Desktop', GAME_LNK),
-        os.path.join(home, 'OneDrive', 'Desktop', GAME_LNK),
-        os.path.join(os.environ.get('ONEDRIVE', '') or home, 'Desktop', GAME_LNK),
-    ]
+    candidates = [os.path.join(d, GAME_LNK) for d in desktop_dirs()]
     for p in candidates:
         if os.path.exists(p):
             return p
@@ -1320,16 +1297,11 @@ def unknown_debug_dump():
     out_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     if ok:
         Image.fromarray(img).save(os.path.join(out_dir, 'unknown_debug.png'))
-        print(time.strftime('%H:%M:%S'), '诊断: 已保存当前画面 unknown_debug.png(程序同目录)')
+        log('诊断: 已保存当前画面 unknown_debug.png(程序同目录)')
         for t, s, cx, cy in paddle_find(0, 0, CLIENT_SIZE[0], CLIENT_SIZE[1], '全屏'):
-            print(time.strftime('%H:%M:%S'), '诊断OCR: %s(%.2f) (%d,%d)' % (t, s, cx, cy))
+            log('诊断OCR: %s(%.2f) (%d,%d)' % (t, s, cx, cy))
     else:
-        print(time.strftime('%H:%M:%S'), '诊断: 内部截图失败(窗口可能已关闭)')
-
-
-def _restart_marker_path(hwnd):
-    """断网重启标记文件路径(UI靠它区分'重启中要保留日志页'和'窗口没了照旧清理')"""
-    return os.path.join(_data_dir(), 'ybxz_restarting_%d.flag' % (hwnd or 0))
+        log('诊断: 内部截图失败(窗口可能已关闭)')
 
 
 def _clear_restart_marker(hwnd):
@@ -1362,20 +1334,20 @@ def launch_game(user32, hwnd=0, mark=False):
             if hwnd and int(old) == hwnd:
                 hwnd = int(new)
                 inherited = True
-                print(time.strftime('%H:%M:%S'), '本窗口刚被其他worker重启, 接管新窗口', hwnd)
+                log('本窗口刚被其他worker重启, 接管新窗口', hwnd)
         except Exception:
             pass
         hwnd2 = 0
         if inherited:
             # 接管的窗口已经在运行(别的worker刚重启完), 直接跳到绑定登录
-            print(time.strftime('%H:%M:%S'), '接管窗口, 跳过拉起流程')
+            log('接管窗口, 跳过拉起流程')
         else:
             pre = set(game_hwnds())
             close_game_window(user32, hwnd)
             lnk = get_game_lnk()
             if not os.path.exists(lnk):
                 raise RuntimeError('桌面上未找到佣兵小镇快捷方式(%s), 无法自动启动游戏, 请手动创建或打开游戏' % GAME_LNK)
-            print(time.strftime('%H:%M:%S'), '正在重新启动游戏...')
+            log('正在重新启动游戏...')
             # 微信刚拉起时登录态未就绪会吞掉打开小程序的指令, 没见到窗口就重发URL
             for attempt in range(3):
                 # 模拟双击桌面快捷方式启动
@@ -1419,11 +1391,11 @@ def launch_game(user32, hwnd=0, mark=False):
         for i in range(150):
             if text_locate(LOGIN_OK_RECT, '地下城') is not None:
                 _clear_restart_marker(hwnd)
-                print(time.strftime('%H:%M:%S'), '已重新进入游戏!')
+                log('已重新进入游戏!')
                 return hwnd2
             if not loading_seen and loading_now():
                 loading_seen = True
-                print(time.strftime('%H:%M:%S'), '检测到加载进度, 停止点击, 等待进入主界面...')
+                log('检测到加载进度, 停止点击, 等待进入主界面...')
             if not loading_seen:
                 dm.MoveTo(lx, ly)
                 dm.LeftClick()
@@ -1437,7 +1409,7 @@ def monitor_main(user32):
     网络监控+掉线重启(独立功能, 用 python YBXZ.py 7 单独运行)
     监控断网/掉线弹窗/窗口消失, 触发后等网络恢复并重启游戏重新登录
     """
-    print(time.strftime('%H:%M:%S'), '网络监控已启动: 断网/掉线弹窗/窗口消失都会自动重启, 心跳每60秒一次')
+    log('网络监控已启动: 断网/掉线弹窗/窗口消失都会自动重启, 心跳每60秒一次')
     last_beat = time.time()
     # 多账号: 优先绑定指定窗口(--hwnd), 单账号按标题找
     if FIXED_HWND and user32.IsWindow(FIXED_HWND):
@@ -1453,7 +1425,7 @@ def monitor_main(user32):
         # 只认自己跟踪的句柄(实测: 多账号时按标题找会盯上别人的窗口, 永远不重启自己)
         hwnd_cur = own if (own and user32.IsWindow(own)) else 0
         if hwnd_cur == 0:
-            print(time.strftime('%H:%M:%S'), '游戏窗口消失, 重新启动...')
+            log('游戏窗口消失, 重新启动...')
             own = launch_game(user32, own, mark=True)
             if FIXED_HWND:
                 globals()['FIXED_HWND'] = own  # 跟踪新窗口(远征转入监控时UI日志页按标记保留)
@@ -1461,7 +1433,7 @@ def monitor_main(user32):
             continue
         # ===== 掉线弹窗检测: 识别弹窗文字, 包含断线重连字样则重启 =====
         if text_locate(OFFLINE_RECT, OFFLINE_TEXT) is not None:
-            print(time.strftime('%H:%M:%S'), '检测到游戏掉线弹窗!')
+            log('检测到游戏掉线弹窗!')
             own = launch_game(user32, hwnd_cur, mark=True)
             if FIXED_HWND:
                 globals()['FIXED_HWND'] = own
@@ -1475,7 +1447,7 @@ def monitor_main(user32):
             continue
         # ===== 心跳: 每60秒报一次平安, 方便确认监控活着 =====
         if time.time() - last_beat > 60:
-            print(time.strftime('%H:%M:%S'), '监控运行中: 网络/游戏正常')
+            log('监控运行中: 网络/游戏正常')
             last_beat = time.time()
         sleep(3)
 
@@ -1538,7 +1510,7 @@ def elf_main(user32):
         # ===== 网络恢复: 重启游戏重新登录 =====
         if net_restart.is_set():
             net_restart.clear()
-            print(time.strftime('%H:%M:%S'), '网络已恢复, 重启游戏继续挂机...')
+            log('网络已恢复, 重启游戏继续挂机...')
             hwnd_bound = launch_game(user32, hwnd_bound, mark=True)
             idle_since = time.time()
             continue
@@ -1559,7 +1531,7 @@ def elf_main(user32):
         else:
             screen = elf_screen(last_screen)
         if screen != last_screen:
-            print(time.strftime('%H:%M:%S'), '当前界面:', screen)
+            log('当前界面:', screen)
             last_screen = screen
             sleep(2)  # 界面流转后延时2秒再OCR(页面加载慢, 1秒就读会校验失败)
         if screen != 'unknown':
@@ -1568,10 +1540,8 @@ def elf_main(user32):
         if screen == 'gain':
             # 挑战成功: 获得物品弹窗 -> 点坐标领奖励, 失败计数清零
             fail_count = 0
-            print(time.strftime('%H:%M:%S'), '挑战成功! 领取奖励')
-            dm.MoveTo(*GAIN_CLICK)
-            sleep(0.5)
-            dm.LeftClick()
+            log('挑战成功! 领取奖励')
+            dm_click(GAIN_CLICK)
             paddle_cache.clear()
             sleep(2)  # 界面流转后延时再识别
             continue
@@ -1583,13 +1553,13 @@ def elf_main(user32):
             if not lose_counted:
                 lose_counted = True
                 fail_count += 1
-                print(time.strftime('%H:%M:%S'), '挑战失败(%d/%d), 点空白回主界面...' % (fail_count, MIRE_FAIL_MAX))
+                log('挑战失败(%d/%d), 点空白回主界面...' % (fail_count, MIRE_FAIL_MAX))
                 if fail_count >= MIRE_FAIL_MAX:
                     raise RuntimeError('精灵秘境连续失败%d次, 战力不足以挂机, 停止脚本!' % MIRE_FAIL_MAX)
             # 优先识别"点击空白"文字, 点文字下方20px(点文字本身无效)
             pos = text_locate(BLANK_RECT, '点击空白', dy=20)
             if pos is not None:
-                print(time.strftime('%H:%M:%S'), '点击空白(%s, %s)...' % pos)
+                log('点击空白(%s, %s)...' % pos)
                 dm.MoveTo(*pos)
             else:
                 dm.MoveTo(*page_pt(BLANK_CLICK))  # 识别不到就点固定空白位置
@@ -1605,7 +1575,7 @@ def elf_main(user32):
                 continue
             # 剩余时间结束: 先专门等领取奖励/挑战失败弹窗(最多10秒),
             # 结算弹窗有延迟, 直接全量重判会误判成main界面
-            print(time.strftime('%H:%M:%S'), '剩余时间结束, 等待结算弹窗...')
+            log('剩余时间结束, 等待结算弹窗...')
             result = ''
             for _ in range(10):
                 sleep(1)
@@ -1626,7 +1596,7 @@ def elf_main(user32):
             continue
         if screen == 'ready':
             # 秘境界面: 点挑战开打
-            print(time.strftime('%H:%M:%S'), '点击挑战...')
+            log('点击挑战...')
             click_text(CHALLENGE_RECT, '挑战')
             paddle_cache.clear()
             sleep(2)  # 页面加载慢, 立刻识别会校验失败
@@ -1635,23 +1605,21 @@ def elf_main(user32):
             # 玩法列表: 定位精灵秘境并点击
             pos = elf_find_mire()
             if pos is not None:
-                print(time.strftime('%H:%M:%S'), '点击精灵秘境(%s, %s)' % pos)
-                dm.MoveTo(pos[0], pos[1])
-                sleep(0.5)
-                dm.LeftClick()
+                log('点击精灵秘境(%s, %s)' % pos)
+                dm_click(pos)
                 paddle_cache.clear()
             sleep(2)  # 页面加载慢, 放缓节奏防校验失败连点(实测连点16次)
             continue
         if screen == 'main':
             # 主界面: 点玩法打开列表
-            print(time.strftime('%H:%M:%S'), '点击玩法...')
+            log('点击玩法...')
             click_text(WANFA_RECT, '玩法')
             paddle_cache.clear()
             sleep(2)
             continue
         # unknown: 不做动作, 交给看门狗(60秒ESC恢复)
         if time.time() - idle_since > 60:
-            print(time.strftime('%H:%M:%S'), '连续60秒未识别到已知界面, 按ESC尝试恢复')
+            log('连续60秒未识别到已知界面, 按ESC尝试恢复')
             dm.KeyPress(27)
             sleep(1)
             idle_since = time.time()
@@ -1810,15 +1778,13 @@ def _exp_st_floor(run):
     返回True=继续循环(原continue) / False=停止挂机(原return)"""
     pos = text_locate(EXP_SELECTED_RECT, '开始远征')
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '点击开始远征...')
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('点击开始远征...')
+        dm_click(pos)
         run.state = 'level'
         run.wait_until = time.time() + 2
         return True
     if text_locate(EXP_TITLE_RECT, '英雄远征') is not None:
-        print(time.strftime('%H:%M:%S'), '层数未选择(无开始远征按钮), 请手动选择层数后重新执行脚本')
+        log('层数未选择(无开始远征按钮), 请手动选择层数后重新执行脚本')
         return False
     sleep(1)
     return True
@@ -1836,14 +1802,12 @@ def _exp_st_level(run):
                 break
             sleep(1)
         if not n:
-            print(time.strftime('%H:%M:%S'), '无法读取所选层数, 请确认已选择层数')
+            log('无法读取所选层数, 请确认已选择层数')
             return False
         run.target_floor = n
-        print(time.strftime('%H:%M:%S'), '已读取用户选择的层数: 第%d层' % n)
-    print(time.strftime('%H:%M:%S'), '点击进入第%d层关卡...' % run.target_floor)
-    dm.MoveTo(*EXP_LEVEL_CLICK)
-    sleep(0.5)
-    dm.LeftClick()
+        log('已读取用户选择的层数: 第%d层' % n)
+    log('点击进入第%d层关卡...' % run.target_floor)
+    dm_click(EXP_LEVEL_CLICK)
     sleep(2)  # 页面切换动画约3秒, 立刻识别'前往'必然miss(实测)
     run.state = 'sub'
     run.wait_until = time.time() + 2
@@ -1860,10 +1824,8 @@ def _exp_st_sub(run):
         sleep(1.5)
         pos = exp_find_sub()
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '点击前往...')
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('点击前往...')
+        dm_click(pos)
         run.state = 'challenge'
         run.wait_until = time.time() + 2
     else:
@@ -1887,10 +1849,8 @@ def _exp_st_challenge(run):
         sleep(1.5)
         pos = text_locate(EXP_CHALLENGE_RECT, '开始挑战')
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '点击开始挑战...')
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('点击开始挑战...')
+        dm_click(pos)
         run.state = 'fight'
         run.battle_started = time.time()
         run.wait_until = time.time() + 2
@@ -1904,18 +1864,16 @@ def _exp_st_fight(run):
     if run.battle_started == 0:
         run.battle_started = time.time()
     if time.time() - run.battle_started > EXP_BATTLE_TIMEOUT:
-        print(time.strftime('%H:%M:%S'), '战斗超时, 全量重判')
+        log('战斗超时, 全量重判')
         run.battle_started = time.time()
         run.state = exp_resync(run.target_floor)
         return True
     # 点开始挑战后可能弹确定弹窗(非100%), 优先关掉它
     if text_locate(EXP_CONFIRM_RECT, '确定') is not None:
-        print(time.strftime('%H:%M:%S'), '关闭确定弹窗...')
+        log('关闭确定弹窗...')
         pos = text_locate(EXP_CONFIRM_RECT, '确定')
         if pos is not None:
-            dm.MoveTo(*pos)
-            sleep(0.5)
-            dm.LeftClick()
+            dm_click(pos)
             paddle_cache.clear()
             sleep(2)  # 战斗页加载动画, 立刻识别弃权会miss并被负缓存放大(实测19秒unknown)
             run.wait_until = time.time() + 8
@@ -1935,9 +1893,9 @@ def _exp_st_fight(run):
     # 战斗可能失败: 失败弹"战斗失败/提升战力"页(没有选择加成, 实测22:48),
     # 不处理会误当加成页点坐标, 有误点'前往'离开远征的风险; 按用户要求直接停止
     if text_locate(EXP_LOSE_RECT, '失败', quick=True) is not None:
-        print(time.strftime('%H:%M:%S'), '战斗失败, 脚本停止(请手动处理后重跑)')
+        log('战斗失败, 脚本停止(请手动处理后重跑)')
         return False
-    print(time.strftime('%H:%M:%S'), '战斗结束, 等待选择加成...')
+    log('战斗结束, 等待选择加成...')
     run.state = 'bonus'
     run.wait_until = time.time() + 5
     return True
@@ -1948,12 +1906,10 @@ def _exp_st_bonus(run):
     texts = paddle_find(*EXP_STUN_RECT, '眩晕')
     hit = any('眩' in t and '晕' in t for t, s, c1, c2 in texts)
     if hit:
-        print(time.strftime('%H:%M:%S'), '刷眩晕成功! 奖励技能含眩晕, 脚本停止')
+        log('刷眩晕成功! 奖励技能含眩晕, 脚本停止')
         return False
-    print(time.strftime('%H:%M:%S'), '无眩晕, 点击选择加成上方坐标继续...')
-    dm.MoveTo(*EXP_BONUS_CLICK)
-    sleep(0.5)
-    dm.LeftClick()
+    log('无眩晕, 点击选择加成上方坐标继续...')
+    dm_click(EXP_BONUS_CLICK)
     sleep(1)  # 加成页关闭有动画, 立刻找放弃会落空(实测)
     run.state = 'level_back'
     run.wait_until = time.time() + 3
@@ -1971,10 +1927,8 @@ def _exp_st_level_back(run):
         sleep(1)
         pos = text_locate(EXP_ABANDON_RECT, '放弃')
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '点击放弃...')
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('点击放弃...')
+        dm_click(pos)
         run.state = 'confirm'
         run.wait_until = time.time() + 2
         return True
@@ -1996,10 +1950,8 @@ def _exp_st_confirm(run):
         sleep(1)
         pos = text_locate(EXP_CONFIRM_RECT, '确定')
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '点击确定...')
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('点击确定...')
+        dm_click(pos)
         paddle_cache.clear()
         # 等页面定型, 按证据路由: 弃权出现=进战斗; 目标层行出现=放弃回列表
         target_text = '第%d层' % run.target_floor
@@ -2021,11 +1973,11 @@ def _exp_st_confirm(run):
             if routed:
                 break
         if routed == 'fight':
-            print(time.strftime('%H:%M:%S'), '确认后进入战斗...')
+            log('确认后进入战斗...')
             run.state = 'fight'
             run.battle_started = time.time()
         else:
-            print(time.strftime('%H:%M:%S'), '确认完成, 回层数列表...')
+            log('确认完成, 回层数列表...')
             run.state = 'scroll'
             run.swipes = 0
             run.wait_until = 0
@@ -2038,10 +1990,8 @@ def _exp_st_scroll(run):
     """放弃后回层数列表: 选中状态会被清空, 需重新点击目标层数再开始远征"""
     pos = text_locate(EXP_SELECTED_RECT, '开始远征')
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '点击开始远征...')
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('点击开始远征...')
+        dm_click(pos)
         sleep(2)  # 页面过渡2~3秒, 立刻重判会抓到带放弃按钮的过渡帧(实测)
         run.state = 'level'
         run.wait_until = time.time() + 2
@@ -2056,20 +2006,16 @@ def _exp_st_scroll(run):
             mhit = m.group(0)
             break
     if mhit:
-        print(time.strftime('%H:%M:%S'), '停在远征地图页(%s), 点放弃退出本层...' % mhit)
+        log('停在远征地图页(%s), 点放弃退出本层...' % mhit)
         popup = text_locate(EXP_CONFIRM_RECT, '确定', quick=True)
         if popup is not None:
-            dm.MoveTo(*popup)
-            sleep(0.5)
-            dm.LeftClick()
+            dm_click(popup)
             paddle_cache.clear()
             sleep(2)
             return True
         apos = text_locate(EXP_ABANDON_RECT, '放弃')
         if apos is not None:
-            dm.MoveTo(*apos)
-            sleep(0.5)
-            dm.LeftClick()
+            dm_click(apos)
             paddle_cache.clear()
             run.state = 'confirm'
             run.wait_until = time.time() + 5
@@ -2078,7 +2024,7 @@ def _exp_st_scroll(run):
     # (精确匹配"第66层"全文, 避免模糊匹配把65层认成66层)
     if run.target_floor == 0:
         # 正式上线: 层数必须用户自己在游戏里点选, 脚本不替用户做主
-        print(time.strftime('%H:%M:%S'),
+        log(
               '未读取到挑战层数, 请在层数列表手动点选要挑战的层数后重新执行脚本')
         return False
     target_text = '第%d层' % run.target_floor
@@ -2093,17 +2039,15 @@ def _exp_st_scroll(run):
             pos = (cx, cy)
             break
     if pos is not None:
-        print(time.strftime('%H:%M:%S'), '找到第%d层, 点击重新选择...' % run.target_floor)
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        log('找到第%d层, 点击重新选择...' % run.target_floor)
+        dm_click(pos)
         sleep(1)
         run.swipes = 0
         return True
     if run.swipes >= EXP_SWIPE_MAX:
-        print(time.strftime('%H:%M:%S'), '滚动%d次仍未找到第%d层, 请手动检查' % (EXP_SWIPE_MAX, run.target_floor))
+        log('滚动%d次仍未找到第%d层, 请手动检查' % (EXP_SWIPE_MAX, run.target_floor))
         return False
-    print(time.strftime('%H:%M:%S'), '拖拽滚动寻找第%d层...(%d/%d)' % (run.target_floor, run.swipes + 1, EXP_SWIPE_MAX))
+    log('拖拽滚动寻找第%d层...(%d/%d)' % (run.target_floor, run.swipes + 1, EXP_SWIPE_MAX))
     # 拖完必须清OCR缓存, 否则下轮读到的是拖前旧行
     paddle_cache.clear()
     if vis and run.target_floor > max(vis):
@@ -2135,7 +2079,7 @@ def expedition_main(user32):
         if not u32.IsWindow(FIXED_HWND):
             raise RuntimeError('多账号模式: 指定的游戏窗口已关闭')
         hwnd2 = FIXED_HWND
-        print(time.strftime('%H:%M:%S'), '多账号模式, 绑定指定窗口:', hwnd2)
+        log('多账号模式, 绑定指定窗口:', hwnd2)
     else:
         hwnd2 = dm.FindWindow('Chrome_WidgetWin_0', GAME_WINDOW_TITLE)
         if hwnd2 == 0:
@@ -2149,23 +2093,23 @@ def expedition_main(user32):
     # 只认标题会拒绝战斗页等无标题页面(实测: 上次中途停止留了场战斗, 重跑被拒)
     # 3次校验兜页面过渡就够了(全量重判一轮就要好几秒, 次数多了不在远征界面时
     # 要干等一分钟才报错, 实测66秒); 每轮打进度日志, 不让界面看着像卡死
-    print(time.strftime('%H:%M:%S'), '校验是否在英雄远征流程中...')
+    log('校验是否在英雄远征流程中...')
     state = 'unknown'
     for attempt in range(3):
         t0 = time.time()
         state = exp_resync(target_floor)
         if state != 'unknown':
             break
-        print(time.strftime('%H:%M:%S'), '第%d次校验未识别到远征界面(耗时%.1f秒)%s'
+        log('第%d次校验未识别到远征界面(耗时%.1f秒)%s'
               % (attempt + 1, time.time() - t0,
                  ', 重试...' if attempt < 2 else ', 放弃'))
         if attempt < 2:
             sleep(1.5)
     if state in ('unknown', 'scroll'):
         # unknown=不在远征流程; scroll=在远征界面但还没选层数(层数列表无开始远征按钮)
-        print(time.strftime('%H:%M:%S'), '请先进入远征界面选择层数后再运行脚本')
+        log('请先进入远征界面选择层数后再运行脚本')
         return
-    print(time.strftime('%H:%M:%S'), '已在英雄远征流程中, 当前状态:', state)
+    log('已在英雄远征流程中, 当前状态:', state)
     run = _ExpRun()
     run.state = state
     state_since = time.time()
@@ -2178,13 +2122,13 @@ def expedition_main(user32):
             continue
         if net_restart.is_set():
             net_restart.clear()
-            print(time.strftime('%H:%M:%S'),
+            log(
                   '网络已恢复, 重启游戏重新登录(与其他账号排队); 此后只做网络/窗口监控保活, 远征需手动重跑继续')
             try:
                 # 传FIXED_HWND(旧窗口): 关旧窗口/交接/重启标记都用它, UI日志页得以保留改挂
                 new_hwnd = launch_game(user32, FIXED_HWND or 0, mark=True)
             except Exception as e:
-                print(time.strftime('%H:%M:%S'), '重启游戏失败: %r' % e)
+                log('重启游戏失败: %r' % e)
                 return
             if FIXED_HWND:
                 globals()['FIXED_HWND'] = new_hwnd  # 监控跟踪新窗口, 不然按标题找会抢别的账号
@@ -2194,14 +2138,14 @@ def expedition_main(user32):
         if FIXED_HWND:
             u32 = ctypes.windll.user32
             if not u32.IsWindow(bound_top):
-                print(time.strftime('%H:%M:%S'), '大窗口已关闭, 停止本账号挂机')
+                log('大窗口已关闭, 停止本账号挂机')
                 return
             if bound_child and not u32.IsWindow(bound_child):
-                print(time.strftime('%H:%M:%S'), '渲染子窗口已关闭, 停止本账号挂机')
+                log('渲染子窗口已关闭, 停止本账号挂机')
                 return
         else:
             if dm.FindWindow('Chrome_WidgetWin_0', GAME_WINDOW_TITLE) == 0:
-                print(time.strftime('%H:%M:%S'), '游戏窗口消失, 请重新进入英雄远征界面后重跑')
+                log('游戏窗口消失, 请重新进入英雄远征界面后重跑')
                 return
 
         # ===== 状态识别: 预期状态优先, 切页等待窗内不重判, 其余全量重判 =====
@@ -2219,7 +2163,7 @@ def expedition_main(user32):
                 run.state = new_state
                 state_since = time.time()
         if run.state != last_log:
-            print(time.strftime('%H:%M:%S'), '当前状态:', run.state)
+            log('当前状态:', run.state)
             last_log = run.state
         if run.state != 'unknown':
             unknown_since = 0
@@ -2235,7 +2179,7 @@ def expedition_main(user32):
         if unknown_since == 0:
             unknown_since = time.time()
         if time.time() - unknown_since > 60:
-            print(time.strftime('%H:%M:%S'), '连续60秒无法识别远征界面, 请手动检查后重跑')
+            log('连续60秒无法识别远征界面, 请手动检查后重跑')
             return
         if time.time() - run.unknown_debug_t > 30:
             run.unknown_debug_t = time.time()
@@ -2249,17 +2193,13 @@ def state_click(state_key, rect, text, page=True, max_cache_age=600):
     记忆超过10分钟或unknown后清空, 防止页面结构变化后点错位置"""
     pos = pos_cache.get(state_key)
     if pos is not None and time.time() - pos_cache.get(state_key + '_t', 0) < max_cache_age:
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        dm_click(pos)
         paddle_cache.clear()  # 点击后界面将变, 清OCR缓存防下轮判到点击前的旧画面
         return pos
     r = page_rect(rect) if page else rect
     pos = text_locate(r, text)
     if pos is not None:
-        dm.MoveTo(*pos)
-        sleep(0.5)
-        dm.LeftClick()
+        dm_click(pos)
         paddle_cache.clear()
         pos_cache[state_key] = pos
         pos_cache[state_key + '_t'] = time.time()
@@ -2326,7 +2266,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         # ===== 网络恢复: 重启游戏重新登录, 接着挂机 =====
         if net_restart.is_set():
             net_restart.clear()
-            print(time.strftime('%H:%M:%S'), '网络已恢复, 重启游戏继续挂机...')
+            log('网络已恢复, 重启游戏继续挂机...')
             hwnd_bound = launch_game(user32, hwnd_bound, mark=True)
             state = which_screen()
             resync_next = time.time() + 4
@@ -2346,7 +2286,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         if time.time() - offline_check_t > 10:
             offline_check_t = time.time()
             if text_locate(OFFLINE_RECT, OFFLINE_TEXT, quick=True) is not None:
-                print(time.strftime('%H:%M:%S'), '检测到游戏掉线弹窗, 重启游戏...')
+                log('检测到游戏掉线弹窗, 重启游戏...')
                 hwnd_bound = launch_game(user32, hwnd_bound, mark=True)
                 reset_page_calibration()
                 state = which_screen()
@@ -2372,7 +2312,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
             state = which_screen()
             resync_next = time.time() + 4  # 重判后4秒冷却
         if state != last_screen:
-            print(time.strftime('%H:%M:%S'), '当前状态:', state)
+            log('当前状态:', state)
             last_screen = state
             sleep(1)  # 界面流转后延时1秒再OCR
         if state != 'unknown':
@@ -2390,7 +2330,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
                 state = 'confirm'
                 continue
             if fail_color_hit():
-                print(time.strftime('%H:%M:%S'), '队伍失败(红X), 点击弃权...')
+                log('队伍失败(红X), 点击弃权...')
                 if state_click('surrender', page_rect(BATTLE_RECT), '弃权') is not None:
                     state = 'confirm'
                     wait_until = time.time() + 8  # 弹窗实测1~2秒就出, 窗口只做兜底
@@ -2399,17 +2339,15 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
                     # 弃权文本定位失败: 先兼容确定弹窗, 2次失败后按默认坐标盲点弃权
                     fail_click_miss += 1
                     if state_click('confirm', CONFIRM_RECT, '确定') is not None:
-                        print(time.strftime('%H:%M:%S'), '弃权不可点, 已点击确定弹窗...')
+                        log('弃权不可点, 已点击确定弹窗...')
                         state = 'confirm'
                         wait_until = time.time() + 6
                         fail_click_miss = 0
                     elif fail_click_miss >= 2:
                         # 一队失败色已确认在失败界面, 直接盲点弃权按钮位置
-                        print(time.strftime('%H:%M:%S'), '文本定位失败, 盲点弃权按钮位置...')
+                        log('文本定位失败, 盲点弃权按钮位置...')
                         p = page_pt((395, 745))
-                        dm.MoveTo(*p)
-                        sleep(0.5)
-                        dm.LeftClick()
+                        dm_click(p)
                         paddle_cache.clear()
                         if fail_click_miss >= 3:
                             fail_click_miss = 0
@@ -2419,7 +2357,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
                     sleep(1)
                 continue
             if text_locate(PASS_RECT, '确定', quick=True) is not None:
-                print(time.strftime('%H:%M:%S'), '地下城通过, 点击确定...')
+                log('地下城通过, 点击确定...')
                 if state_click('pass', PASS_RECT, '确定') is not None:
                     state = 'dungeon'
                     wait_until = time.time() + 12
@@ -2430,7 +2368,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
             if text_locate(page_rect(BATTLE_RECT), '弃权', quick=True) is None:
                 battle_anchor_miss += 1
                 if battle_anchor_miss >= 5:  # 约25秒, 容忍战斗特效短暂遮挡
-                    print(time.strftime('%H:%M:%S'), '战斗锚点(弃权)连续消失, 全量重判状态')
+                    log('战斗锚点(弃权)连续消失, 全量重判状态')
                     battle_anchor_miss = 0
                     state = which_screen()
                     # 注意: 这里不重置battle_started, 300秒兜底始终有效
@@ -2439,7 +2377,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
                 battle_anchor_miss = 0
             if time.time() - battle_started > BATTLE_TIMEOUT:
                 # 超时不ESC(可能还在打), 全量重判对齐真实状态
-                print(time.strftime('%H:%M:%S'), '战斗超过%s秒, 全量重判状态' % BATTLE_TIMEOUT)
+                log('战斗超过%s秒, 全量重判状态' % BATTLE_TIMEOUT)
                 state = which_screen()
                 if state == 'battle':
                     battle_started = time.time()  # 还在打, 重新计时
@@ -2451,7 +2389,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
             # 弃权后的确定弹窗: 点掉后停在confirm, 由预期检查等"点击空白"结算页出现
             # (不改状态盲跳: 弹窗生效要10~30秒, 点早了下轮预期检查还会带我们回来重点)
             if click_text(page_rect(CONFIRM_RECT), '确定') is not None:
-                print(time.strftime('%H:%M:%S'), '点击确定...')
+                log('点击确定...')
                 wait_until = time.time() + 8  # 空白页实测3秒内出现, 窗口只做兜底
             else:
                 state = which_screen()
@@ -2460,10 +2398,8 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         if state == 'blank':
             # 点击空白关闭结算遮挡页; 停在blank由预期检查等"再次挑战"出现
             if text_locate(page_rect(BLANK_RECT), '点击空白', quick=True) is not None:
-                print(time.strftime('%H:%M:%S'), '点击空白...')
-                dm.MoveTo(*page_pt(BLANK_CLICK))
-                sleep(0.5)
-                dm.LeftClick()
+                log('点击空白...')
+                dm_click(page_pt(BLANK_CLICK))
                 paddle_cache.clear()  # 盲点也要清缓存, 防预期检查读到点击前的旧画面
                 wait_until = time.time() + 8
             else:
@@ -2473,7 +2409,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         if state == 'again':
             # 再次挑战: 直接开下一把
             if state_click('again', AGAIN_RECT, '再次挑战') is not None:
-                print(time.strftime('%H:%M:%S'), '点击再次挑战...')
+                log('点击再次挑战...')
                 sleep(1)
                 state = 'depart'
                 wait_until = time.time() + 8  # 实测2秒内到出发页, 窗口只做兜底
@@ -2484,7 +2420,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         if state == 'pass':
             # 地下城通过确定: 点击回地下城界面
             if click_text(page_rect(PASS_RECT), '确定') is not None:
-                print(time.strftime('%H:%M:%S'), '点击通过确定, 回地下城界面...')
+                log('点击通过确定, 回地下城界面...')
                 sleep(1)
                 state = 'dungeon'
                 wait_until = time.time() + 12
@@ -2495,17 +2431,15 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         if state == 'depart':
             # 队伍出发界面: 点击出发; 出发后可能弹确定(非100%), 5秒内点掉再进战斗监控
             if state_click('depart', DEPART_RECT, '队伍出发') is not None:
-                print(time.strftime('%H:%M:%S'), '点击队伍出发...')
+                log('点击队伍出发...')
                 last_depart_time = time.time()
                 sleep(1)
                 for _ in range(5):
                     cpos = text_locate(CONFIRM_RECT, '确定', quick=True)
                     if cpos is None:
                         break
-                    print(time.strftime('%H:%M:%S'), '关闭确定弹窗...')
-                    dm.MoveTo(*cpos)
-                    sleep(0.5)
-                    dm.LeftClick()
+                    log('关闭确定弹窗...')
+                    dm_click(cpos)
                     paddle_cache.clear()
                     sleep(1)
                 state = 'battle'
@@ -2518,11 +2452,9 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         if state == 'dungeon':
             # 地下城界面: 点进入战斗准备
             entry_clicked_at = 0
-            print(time.strftime('%H:%M:%S'), '点击进入战斗准备...')
+            log('点击进入战斗准备...')
             sleep(2)  # 地图刚出现时按钮未就绪, 稳定2秒再点(点太早会弹回城镇)
-            dm.MoveTo(*page_pt(DUNGEON_ENTRY_CLICK))
-            sleep(0.5)
-            dm.LeftClick()
+            dm_click(page_pt(DUNGEON_ENTRY_CLICK))
             paddle_cache.clear()
             sleep(1)
             state = 'depart'
@@ -2533,20 +2465,15 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
             # 城镇: 点地下城入口; 30秒还没进去就ESC
             pos = pos_cache.get('town_entry') or text_locate(TOWN_RECT, '地下城')
             if pos is not None:
-                # 出发后20秒内被弹回城镇: 连续2次判定无法出发(如今日次数用完), 停止
+                # 出发后20秒内被弹回城镇(12秒内=秒弹, 次数用完/异常都可能):
+                # 连续2次判定无法出发, 停止脚本并存诊断图
+                # (历史缺陷修复: 原来有20秒/12秒两段检查给同一计数器重复+1,
+                #  单次弹回直接触发停止; 12~20秒弹回又被第二段else清零永不停止)
                 if last_depart_time and time.time() - last_depart_time < 20:
                     depart_bounce += 1
                     if depart_bounce >= 2:
-                        print(time.strftime('%H:%M:%S'),
-                              '点击出发后连续返回城镇(可能今日挑战次数已用完), 停止脚本')
-                        return
-                else:
-                    depart_bounce = 0
-                # 出发后12秒内被弹回城镇: 连续2次判定出发异常, 停止并存诊断图
-                if last_depart_time and time.time() - last_depart_time < 12:
-                    depart_bounce += 1
-                    if depart_bounce >= 2:
-                        print(time.strftime('%H:%M:%S'), '点击出发后连续返回城镇, 存在异常, 停止脚本')
+                        log('点击出发后连续%d次返回城镇(可能今日挑战次数已用完), 停止脚本'
+                            % depart_bounce)
                         unknown_debug_dump()
                         return
                 else:
@@ -2554,15 +2481,13 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
                 # 中部出现"确定"弹窗(公告/二次确认)会挡住入口点击, 先点掉
                 cpos = text_locate(CONFIRM_RECT, '确定', quick=True)
                 if cpos is not None:
-                    print(time.strftime('%H:%M:%S'), '关闭确定弹窗...')
-                    dm.MoveTo(*cpos)
-                    sleep(0.5)
-                    dm.LeftClick()
+                    log('关闭确定弹窗...')
+                    dm_click(cpos)
                     paddle_cache.clear()
                     sleep(1)
                     continue
                 if entry_clicked_at and time.time() - entry_clicked_at > 30:
-                    print(time.strftime('%H:%M:%S'), '点击入口后未进入地下城界面, 按ESC恢复')
+                    log('点击入口后未进入地下城界面, 按ESC恢复')
                     dm.KeyPress(27)
                     sleep(1)
                     entry_clicked_at = 0
@@ -2570,10 +2495,8 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
                     continue
                 if entry_clicked_at == 0:
                     entry_clicked_at = time.time()
-                    print(time.strftime('%H:%M:%S'), '点击地下城入口...')
-                dm.MoveTo(*pos)
-                sleep(0.5)
-                dm.LeftClick()
+                    log('点击地下城入口...')
+                dm_click(pos)
                 paddle_cache.clear()
                 sleep(1)
                 wait_until = time.time() + 12  # 地图加载8~15秒, 窗内不重判不重复点击
@@ -2582,7 +2505,7 @@ def main(action=None, fixed_hwnd=None, game_lnk=None):
         # unknown: 不做动作, 交给看门狗(60秒ESC恢复); 位置缓存清空防点错
         pos_cache.clear()
         if time.time() - idle_since > 60:
-            print(time.strftime('%H:%M:%S'), '连续60秒未识别到已知状态, 按ESC尝试恢复')
+            log('连续60秒未识别到已知状态, 按ESC尝试恢复')
             dm.KeyPress(27)
             sleep(1)
             idle_since = time.time()

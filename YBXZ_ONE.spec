@@ -15,7 +15,7 @@ a = Analysis(
         (os.path.join('rapidocr_onnxruntime', 'models', 'ch_ppocr_mobile_v2.0_cls_infer.onnx'), 'rapidocr_onnxruntime/models'),
         (os.path.join('rapidocr_onnxruntime', 'config.yaml'), 'rapidocr_onnxruntime'),
     ],
-    hiddenimports=['YBXZ', 'rapidocr_onnxruntime'],
+    hiddenimports=['YBXZ', 'ybxz_common', 'ybxz_updater', 'rapidocr_onnxruntime'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
